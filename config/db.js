@@ -1,5 +1,6 @@
 //connexion to the database
 const mongoose = require('mongoose');
+mongoose.set('strictQuery', true);
 module.exports.connectToMongoDB = () => { 
     mongoose.connect(process.env.Url_MongoDB).then(() => {
         console.log('Connected to MongoDB');

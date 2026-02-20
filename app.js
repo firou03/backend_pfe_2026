@@ -7,7 +7,7 @@ const http = require('http');//1
 
 const { connectToMongoDB } = require('./config/db');
 var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
+var usersRouter = require('./routes/users.routes');
 var osRouter = require('./routes/os.Routes');
 
 require('dotenv').config();//3
@@ -36,12 +36,12 @@ app.use(function(err, req, res, next) {
 
   // render the error page
   res.status(err.status || 500);
-  res.render('error');
+res.send("Server error");
 });
 
 //2
 const server = http.createServer(app);
 server.listen(process.env.PORT, () => {
   connectToMongoDB ();
-  console.log('Server is running on http://localhost:${process.env.PORT}');  
+console.log("Server is running on http://localhost:" + process.env.PORT);
 });
