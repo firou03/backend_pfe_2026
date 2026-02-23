@@ -27,7 +27,10 @@ const userSchema = new mongoose.Schema(
       min: 20,
       max: 80,
     },
+     location: String,
+     user_image: String, //champs image
   },
+  
   { timestamps: true }
 );
 
