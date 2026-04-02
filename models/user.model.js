@@ -27,22 +27,40 @@ const userSchema = new mongoose.Schema(
       min: 20,
       max: 80,
     },
-     location: String,
-     user_image: String, //champs image
+
+    location: String,
+    user_image: String,
+
+    // ✅ ADD THIS
+    role: {
+      type: String,
+      enum: ["admin", "client", "transporteur"],
+      default: "client",
+    },
+
+    // ⭐ Pour moyenne des notes 
+    averageRating: {
+      type: Number,
+      default: 0,
+    },
+
+    totalReviews: {
+      type: Number,
+      default: 0,
+    },
   },
-  
   { timestamps: true }
 );
 
 // Hash password before saving
 userSchema.pre("save", async function () {
   try {
-    const salt = await bcrypt.genSalt();
+    if (!this.isModified("password")) return;
+    const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
   } catch (err) {
     throw err;
   }
 });
-
 
 module.exports = mongoose.model("User", userSchema);

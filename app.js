@@ -4,19 +4,30 @@ var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 const http = require('http');//1
+const app = express();
+app.use(express.json());
+
+const transportRequestRoutes = require("./routes/transportRequest.routes");//transport request routes
+app.use("/api/transport-requests", transportRequestRoutes);//transport request routes
+
+const authRoutes = require("./routes/auth.routes");
+
+app.use("/api/auth", authRoutes);
 
 const { connectToMongoDB } = require('./config/db');
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users.routes');
 var osRouter = require('./routes/os.Routes');
+const cors = require('cors');
 
 require('dotenv').config();//3
-var app = express();
+
 
 
 app.use(logger('dev'));
-app.use(express.json());
+
 app.use(express.urlencoded({ extended: false }));
+app.use(cors({ origin: "http://localhost:3000" }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
