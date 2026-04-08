@@ -28,6 +28,16 @@ const transportRequestSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    weight: {
+    type: Number,
+    required: true,
+  },
+  isSensitive: {
+    type: String,
+    enum: ["oui", "non"],
+    default: "non",
+  },
+    
   },
   { timestamps: true }
 );
