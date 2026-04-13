@@ -2,6 +2,16 @@ const mongoose = require("mongoose");
 
 const transportRequestSchema = new mongoose.Schema(
   {
+    client: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    transporteur: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     pickupLocation: {
       type: String,
       required: true,
@@ -14,30 +24,20 @@ const transportRequestSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    weight: {
+      type: Number,
+      default: 0,
+    },
+    isSensitive: {
+      type: String,
+      enum: ["oui", "non"],
+      default: "non",
+    },
     status: {
       type: String,
-      enum: ["pending", "accepted", "completed"],
+      enum: ["pending", "accepted", "delivered"],
       default: "pending",
     },
-    client: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    transporteur: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    weight: {
-    type: Number,
-    required: true,
-  },
-  isSensitive: {
-    type: String,
-    enum: ["oui", "non"],
-    default: "non",
-  },
-    
   },
   { timestamps: true }
 );

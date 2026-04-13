@@ -42,13 +42,23 @@ module.exports.getUserById = async (req, res) => {
 
 module.exports.createUser = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    const newUser = new userModel({ name, email, password });
+    const { name, email, password, role } = req.body;
+
+    const newUser = new userModel({
+      name,
+      email,
+      password,
+      role, // ✅ ADD THIS
+    });
+
     await newUser.save();
-    res
-      .status(201)
-      .json({ message: "User created successfully", data: newUser });
+
+    res.status(201).json({
+      message: "User created successfully",
+      data: newUser,
+    });
   } catch (error) {
+    console.error(error); // 🔥 ADD THIS FOR DEBUG
     res.status(500).json({ error: error.message });
   }
 };

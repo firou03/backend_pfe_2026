@@ -5,18 +5,20 @@ const controller = require("../controllers/transportRequest.controller");
 const auth = require("../middlewares/authMiddleware");
 const checkRole = require("../middlewares/checkRole");
 
-// Create request → seulement user connecté
+// Create request
 router.post("/", auth, controller.createRequest);
 
-// Get all → user connecté
+// Get all
 router.get("/", auth, controller.getAllRequests);
 
-// Accept request → 🔥 SEULEMENT transporteur
-router.put(
-  "/accept/:id",
-  auth,
-  checkRole("transporteur"),
-  controller.acceptRequest
-);
+// Get pending requests
+router.get("/pending", auth, controller.getPendingRequests);
 
+// Get mes requests acceptées
+router.get("/mes-requests", auth, controller.getMesRequests);
+
+// Accept request
+router.put("/accept/:id", auth, controller.acceptRequest);
+
+// ✅ module.exports TOUJOURS à la fin
 module.exports = router;

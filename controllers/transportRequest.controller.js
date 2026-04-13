@@ -3,7 +3,10 @@ const TransportRequest = require("../models/transportRequest.model");
 // CREATE
 exports.createRequest = async (req, res) => {
   try {
-    const request = await TransportRequest.create(req.body);
+    const request = await TransportRequest.create({
+      ...req.body,
+      client: req.user._id, // ✅ ID du client connecté
+    });
     res.status(201).json(request);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -40,6 +43,29 @@ exports.acceptRequest = async (req, res) => {
     await request.save();
 
     res.json(request);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+// GET PENDING ONLY
+exports.getPendingRequests = async (req, res) => {
+  try {
+    const requests = await TransportRequest.find({ status: "pending" })
+      .populate("client", "name email");
+    res.json(requests);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+// GET MES REQUESTS (transporteur connecté)
+exports.getMesRequests = async (req, res) => {
+  try {
+    const requests = await TransportRequest.find({
+      transporteur: req.user._id,
+      status: "accepted"
+    }).populate("client", "name email");
+    
+    res.json(requests);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
