@@ -42,13 +42,17 @@ module.exports.getUserById = async (req, res) => {
 
 module.exports.createUser = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, dateNaissance } = req.body;
+    const permisPhoto =
+      role === "transporteur" && req.file ? req.file.filename : null;
 
     const newUser = new userModel({
       name,
       email,
       password,
-      role, // ✅ ADD THIS
+      role,
+      dateNaissance: role === "transporteur" ? dateNaissance : null,
+      permisPhoto,
     });
 
     await newUser.save();

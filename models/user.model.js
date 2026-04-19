@@ -31,13 +31,19 @@ const userSchema = new mongoose.Schema(
     location: String,
     user_image: String,
 
-    // ✅ ADD THIS
+    dateNaissance: Date,
+
+    permisPhoto: {
+      type: String,
+      default: null,
+    },
+
     role: {
       type: String,
       enum: ["admin", "client", "transporteur"],
       default: "client",
     },
-
+    
     // ⭐ Pour moyenne des notes 
     averageRating: {
       type: Number,

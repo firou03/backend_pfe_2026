@@ -7,8 +7,8 @@ const User = require("../models/user.model");
 exports.register = async (req, res) => {
   try {
 
-    const { name, email, password, role } = req.body;
-
+    const { name, email, password, role, dateNaissance } = req.body;
+ const permisPhoto = req.file ? req.file.filename : null;
     // check if user already exists
     const existUser = await User.findOne({ email });
     if (existUser) {
@@ -19,7 +19,9 @@ exports.register = async (req, res) => {
       name,
       email,
       password,
-      role
+      role,
+       dateNaissance: role === "transporteur" ? dateNaissance : null,
+      permisPhoto: role === "transporteur" ? permisPhoto : null,
     });
 
     await user.save();

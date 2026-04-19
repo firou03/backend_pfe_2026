@@ -38,6 +38,11 @@ const transportRequestSchema = new mongoose.Schema(
       enum: ["pending", "accepted", "delivered"],
       default: "pending",
     },
+    transporterLocation: {
+      lat: { type: Number },
+      lng: { type: Number },
+      updatedAt: { type: Date },
+    },
   },
   { timestamps: true }
 );

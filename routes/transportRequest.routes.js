@@ -17,8 +17,14 @@ router.get("/pending", auth, controller.getPendingRequests);
 // Get mes requests acceptées
 router.get("/mes-requests", auth, controller.getMesRequests);
 
+// Get current client requests
+router.get("/my-requests", auth, controller.getMyRequests);
+
 // Accept request
 router.put("/accept/:id", auth, controller.acceptRequest);
+
+// Update transporter location for tracking
+router.put("/update-location/:id", auth, controller.updateLocation);
 
 // ✅ module.exports TOUJOURS à la fin
 module.exports = router;
