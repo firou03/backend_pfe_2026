@@ -6,4 +6,6 @@ const upload = require("../middlewares/uploadfile");
 router.post("/register", upload.single("permis"), authController.register);
 router.post("/login", authController.login);
 
+
+
 module.exports = router;
