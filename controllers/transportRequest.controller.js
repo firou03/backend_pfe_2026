@@ -62,7 +62,7 @@ exports.getMesRequests = async (req, res) => {
   try {
     const requests = await TransportRequest.find({
       transporteur: req.user._id,
-      status: "accepted"
+      status: { $in: ["accepted", "delivered"] }
     }).populate("client", "name email");
     
     res.json(requests);
@@ -129,6 +129,28 @@ exports.updateLocation = async (req, res) => {
       message: "Location updated",
       request,
     });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// DELIVER
+exports.deliverRequest = async (req, res) => {
+  try {
+    const request = await TransportRequest.findById(req.params.id);
+
+    if (!request)
+      return res.status(404).json({ message: "Request not found" });
+
+    // Seul le transporteur assigné peut livrer
+    if (request.transporteur && request.transporteur.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Non autorisé" });
+    }
+
+    request.status = "delivered";
+    await request.save();
+
+    res.json({ message: "Statut mis à jour : Livré", request });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

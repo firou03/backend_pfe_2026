@@ -24,6 +24,8 @@ app.use("/api/transport-requests", transportRequestRoutes); //transport request 
 const authRoutes = require("./routes/auth.routes");
 
 app.use("/api/auth", authRoutes);
+const chatRoutes = require("./routes/chatRoutes");
+app.use("/api/chat", chatRoutes);
 
 const { connectToMongoDB } = require("./config/db");
 var indexRouter = require("./routes/index");

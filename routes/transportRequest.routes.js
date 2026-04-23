@@ -26,5 +26,8 @@ router.put("/accept/:id", auth, controller.acceptRequest);
 // Update transporter location for tracking
 router.put("/update-location/:id", auth, controller.updateLocation);
 
+// Deliver request
+router.put("/deliver/:id", auth, controller.deliverRequest);
+
 // ✅ module.exports TOUJOURS à la fin
 module.exports = router;
