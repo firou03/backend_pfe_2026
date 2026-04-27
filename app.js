@@ -26,6 +26,8 @@ const authRoutes = require("./routes/auth.routes");
 app.use("/api/auth", authRoutes);
 const chatRoutes = require("./routes/chatRoutes");
 app.use("/api/chat", chatRoutes);
+const reviewRoutes = require("./routes/reviewRoutes");
+app.use("/api/reviews", reviewRoutes);
 
 const { connectToMongoDB } = require("./config/db");
 var indexRouter = require("./routes/index");

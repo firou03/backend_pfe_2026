@@ -55,6 +55,12 @@ const userSchema = new mongoose.Schema(
       default: 0,
     },
 
+    phone: String,
+    address: String,
+    city: String,
+    postalCode: String,
+    preference: String,
+
     // Password reset fields
     resetPasswordToken: String,
     resetPasswordExpires: Date,

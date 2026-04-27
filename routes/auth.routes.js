@@ -5,6 +5,8 @@ const upload = require("../middlewares/uploadfile");
 
 router.post("/register", upload.single("permis"), authController.register);
 router.post("/login", authController.login);
+router.post("/forgot-password", authController.forgotPassword);
+router.put("/reset-password/:token", authController.resetPassword);
 
 
 

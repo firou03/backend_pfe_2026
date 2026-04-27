@@ -17,8 +17,8 @@ exports.createRequest = async (req, res) => {
 exports.getAllRequests = async (req, res) => {
   try {
     const requests = await TransportRequest.find()
-      .populate("client", "name email")
-      .populate("transporteur", "name email");
+      .populate("client", "name email user_image phone location address city role")
+      .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews");
 
     res.json(requests);
   } catch (error) {
@@ -51,7 +51,8 @@ exports.acceptRequest = async (req, res) => {
 exports.getPendingRequests = async (req, res) => {
   try {
     const requests = await TransportRequest.find({ status: "pending" })
-      .populate("client", "name email");
+      .populate("client", "name email user_image phone location address city role")
+      .sort({ createdAt: -1 });
     res.json(requests);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -63,7 +64,10 @@ exports.getMesRequests = async (req, res) => {
     const requests = await TransportRequest.find({
       transporteur: req.user._id,
       status: { $in: ["accepted", "delivered"] }
-    }).populate("client", "name email");
+    })
+      .populate("client", "name email user_image phone location address city role")
+      .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews")
+      .sort({ createdAt: -1 });
     
     res.json(requests);
   } catch (error) {
@@ -77,7 +81,8 @@ exports.getMyRequests = async (req, res) => {
     const requests = await TransportRequest.find({
       client: req.user._id,
     })
-      .populate("transporteur", "name email")
+      .populate("client", "name email user_image phone location address city role")
+      .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews")
       .sort({ createdAt: -1 });
 
     res.json(requests);

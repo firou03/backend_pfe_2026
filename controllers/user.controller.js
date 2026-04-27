@@ -96,11 +96,12 @@ module.exports.createUserModerateur = async (req, res) => {
 module.exports.updateUser = async (req, res) => {
   try {
     const userId = req.params.id;
-    const { name, age, location } = req.body
+    const updateData = req.body;
+    
     const updatedUser = await userModel.findByIdAndUpdate(
       userId,
-      { name, age, location },
-      { new: true },
+      { $set: updateData },
+      { new: true }
     );
     if (!updatedUser) {
       throw new Error("User not found");
@@ -135,6 +136,35 @@ module.exports.createUserWithImage = async (req, res) => {
     res
       .status(201)
       .json({ message: "User created successfully", data: newUser });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+module.exports.updateUserProfilePicture = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    
+    if (!req.file) {
+      throw new Error("No image file provided");
+    }
+
+    const user_image = req.file.filename;
+    
+    const updatedUser = await userModel.findByIdAndUpdate(
+      userId,
+      { $set: { user_image } },
+      { new: true }
+    );
+    
+    if (!updatedUser) {
+      throw new Error("User not found");
+    }
+    
+    res.status(200).json({ 
+      message: "Profile picture updated successfully", 
+      data: updatedUser 
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

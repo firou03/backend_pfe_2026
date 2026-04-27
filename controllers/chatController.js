@@ -30,7 +30,7 @@ exports.getConversations = async (req, res) => {
     const conversations = await Conversation.find({
       participants: { $in: [req.user.id] }
     })
-    .populate('participants', 'name email role') // Pour voir le profil de l'autre
+    .populate('participants', 'name email role user_image') // Pour voir le profil de l'autre
     .sort({ updatedAt: -1 });
     res.status(200).json(conversations);
   } catch (err) { res.status(500).json(err); }
@@ -64,7 +64,9 @@ exports.getMessages = async (req, res) => {
   try {
     const messages = await Message.find({
       conversationId: req.params.conversationId
-    }).sort({ createdAt: 1 });
+    })
+    .populate('senderId', 'name email user_image')
+    .sort({ createdAt: 1 });
     res.status(200).json(messages);
   } catch (err) { res.status(500).json(err); }
 };
@@ -84,7 +86,7 @@ exports.markMessagesAsRead = async (req, res) => {
 exports.getConversationByRequest = async (req, res) => {
   try {
     const conv = await Conversation.findOne({ requestId: req.params.requestId })
-      .populate('participants', 'name email role');
+      .populate('participants', 'name email role user_image');
     res.status(200).json(conv);
   } catch (err) { res.status(500).json(err); }
 };
