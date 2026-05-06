@@ -148,3 +148,22 @@ module.exports.deleteReview = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// GET ALL (for Admin)
+module.exports.getAllReviews = async (req, res) => {
+  try {
+    const reviews = await Review.find()
+      .populate("ratedBy",   "name email user_image role")
+      .populate("ratedUser", "name email user_image role")
+      .populate("transportRequest", "pickupLocation deliveryLocation weight status")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      message: "Toutes les évaluations récupérées",
+      data: reviews,
+      count: reviews.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

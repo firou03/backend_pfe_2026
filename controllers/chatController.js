@@ -7,18 +7,24 @@ exports.createConversation = async (req, res) => {
     const { participantId, requestId } = req.body;
     const currentUserId = req.user.id; // ID extrait du token JWT
 
-    // Vérifier si elle existe déjà
+    // Check if conversation already exists between these two users
     let conv = await Conversation.findOne({
-      requestId,
       participants: { $all: [currentUserId, participantId] }
     });
 
     if (!conv) {
+      // Create new conversation if none exists
       conv = new Conversation({
         participants: [currentUserId, participantId],
-        requestId
+        requestId: [requestId]
       });
       await conv.save();
+    } else {
+      // Add request ID to existing conversation if not already there
+      if (conv.requestId && !conv.requestId.includes(requestId)) {
+        conv.requestId = Array.isArray(conv.requestId) ? [...conv.requestId, requestId] : [conv.requestId, requestId];
+        await conv.save();
+      }
     }
     res.status(200).json(conv);
   } catch (err) { res.status(500).json(err); }
@@ -85,7 +91,7 @@ exports.markMessagesAsRead = async (req, res) => {
 // Récupérer une conversation par ID de requête
 exports.getConversationByRequest = async (req, res) => {
   try {
-    const conv = await Conversation.findOne({ requestId: req.params.requestId })
+    const conv = await Conversation.findOne({ requestId: { $in: [req.params.requestId] } })
       .populate('participants', 'name email role user_image');
     res.status(200).json(conv);
   } catch (err) { res.status(500).json(err); }

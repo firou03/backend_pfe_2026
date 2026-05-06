@@ -26,6 +26,11 @@ const reviewSchema = new mongoose.Schema(
       type: String,
       maxlength: 500,
     },
+    status: {
+      type: String,
+      enum: ["pending", "resolved", "rejected"],
+      default: "resolved",
+    },
   },
   { timestamps: true }
 );

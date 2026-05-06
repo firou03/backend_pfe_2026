@@ -43,6 +43,11 @@ const transportRequestSchema = new mongoose.Schema(
       lng: { type: Number },
       updatedAt: { type: Date },
     },
+    payment: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Payment",
+      default: null,
+    },
   },
   { timestamps: true }
 );

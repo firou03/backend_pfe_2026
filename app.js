@@ -9,7 +9,7 @@ const app = express();
 require("dotenv").config(); //3
 
 const corsOptions = {
-  origin: "http://localhost:3000",
+  origin: ["http://localhost:3000", "http://localhost:8081", "http://localhost:8082", "http://localhost:19006"],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
@@ -28,11 +28,15 @@ const chatRoutes = require("./routes/chatRoutes");
 app.use("/api/chat", chatRoutes);
 const reviewRoutes = require("./routes/reviewRoutes");
 app.use("/api/reviews", reviewRoutes);
+const paymentRoutes = require("./routes/paymentRoutes");
+app.use("/api/payments", paymentRoutes);
+
+const adminRoutes = require("./routes/admin.routes");
+app.use("/api/admin", adminRoutes);
 
 const { connectToMongoDB } = require("./config/db");
 var indexRouter = require("./routes/index");
 var usersRouter = require("./routes/users.routes");
-var osRouter = require("./routes/os.Routes");
 
 app.use(logger("dev"));
 
@@ -42,7 +46,6 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/index", indexRouter);
 app.use("/users", usersRouter);
-app.use("/os", osRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {

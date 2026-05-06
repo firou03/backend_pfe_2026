@@ -55,6 +55,12 @@ const userSchema = new mongoose.Schema(
       default: 0,
     },
 
+    // 💰 Revenue tracking (for transporteurs & admin)
+    totalRevenue: {
+      type: Number,
+      default: 0,
+    },
+
     phone: String,
     address: String,
     city: String,

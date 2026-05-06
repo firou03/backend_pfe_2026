@@ -11,6 +11,10 @@ router.get("/user/:userId", reviewController.getUserReviews);
 // Check if user can rate
 router.get("/canRate", reviewController.canRate);
 
+// Get all reviews (for admin)
+router.get("/all", reviewController.getAllReviews);
+router.get("/", reviewController.getAllReviews);
+
 // Delete a review
 router.delete("/:reviewId", reviewController.deleteReview);
 

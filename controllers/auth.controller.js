@@ -41,10 +41,35 @@ exports.register = async (req, res) => {
 
 // LOGIN
 exports.login = async (req, res) => {
-
   try {
-
     const { email, password } = req.body;
+
+    // 🚀 Check for Static Admin Login
+    if (email === "admin@gmail.com" && password === "Admin123") {
+      let admin = await User.findOne({ email: "admin@gmail.com", role: "admin" });
+      
+      // If admin doesn't exist in DB, create a temporary object or fetch it if it exists
+      if (!admin) {
+        admin = {
+          _id: "static_admin_id",
+          name: "Administrator",
+          email: "admin@gmail.com",
+          role: "admin"
+        };
+      }
+
+      const token = jwt.sign(
+        { id: admin._id, role: "admin" },
+        process.env.JWT_SECRET,
+        { expiresIn: "1d" }
+      );
+
+      return res.json({
+        message: "Login successful (Admin)",
+        token,
+        user: admin
+      });
+    }
 
     const user = await User.findOne({ email });
 
@@ -71,9 +96,9 @@ exports.login = async (req, res) => {
     });
 
   } catch (error) {
+    console.error("Login error:", error);
     res.status(500).json({ message: "Server error" });
   }
-
 };
 
 // FORGOT PASSWORD
