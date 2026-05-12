@@ -20,13 +20,19 @@ exports.getPriceForRequest = async (req, res) => {
       return res.status(404).json({ message: "Request not found" });
     }
 
-    const amount = exports.calculatePrice(request.weight);
+    // Ensure weight is a number
+    const weight = parseFloat(request.weight) || 0;
+    if (weight <= 0) {
+      return res.status(400).json({ error: "Le poids du colis n'est pas défini" });
+    }
+
+    const amount = exports.calculatePrice(weight);
 
     res.json({
-      weight: request.weight,
+      weight: weight,
       amount,
       currency: "DT",
-      description: `Transport de ${request.weight}kg - ${request.pickupLocation} → ${request.deliveryLocation}`,
+      description: `Transport de ${weight}kg - ${request.pickupLocation} → ${request.deliveryLocation}`,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -38,26 +44,36 @@ exports.createPayment = async (req, res) => {
   try {
     const { requestId, cardNumber, holderName, paymentMethod = "card" } = req.body;
     
+    if (!requestId) {
+      return res.status(400).json({ error: "RequestId is required" });
+    }
+
     const request = await TransportRequest.findById(requestId);
     if (!request) {
       return res.status(404).json({ message: "Request not found" });
     }
 
-    const amount = exports.calculatePrice(request.weight);
+    // Validate weight (same as getPriceForRequest)
+    const weight = parseFloat(request.weight) || 0;
+    if (weight <= 0) {
+      return res.status(400).json({ error: "Le poids du colis n'est pas défini" });
+    }
+
+    const amount = exports.calculatePrice(weight);
     const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     const payment = await Payment.create({
       transportRequest: requestId,
       transporteur: request.transporteur,
       client: request.client,
-      weight: request.weight,
+      weight: weight,
       amount,
       paymentMethod,
       transactionId,
-      cardInfo: {
+      cardInfo: paymentMethod === "card" ? {
         cardNumber: cardNumber ? cardNumber.slice(-4) : null,
         holderName,
-      },
+      } : null,
       status: "completed", // In real system, this would be after 3D secure validation
     });
 
@@ -71,6 +87,7 @@ exports.createPayment = async (req, res) => {
       transactionId: payment.transactionId,
     });
   } catch (error) {
+    console.error("Payment error:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -112,38 +129,4 @@ exports.getUserPayments = async (req, res) => {
   }
 };
 
-// Confirm payment from client
-exports.confirmPayment = async (req, res) => {
-  try {
-    const { requestId } = req.params;
-    const { amount, paymentMethod, cardNumber, holderName } = req.body;
 
-    // Find payment by transport request ID
-    const payment = await Payment.findOne({ transportRequest: requestId });
-    if (!payment) {
-      return res.status(404).json({ message: "Payment not found" });
-    }
-
-    if (payment.amount !== amount) {
-      return res.status(400).json({ message: "Amount mismatch" });
-    }
-
-    // Update payment status to completed
-    payment.status = "completed";
-    payment.paymentMethod = paymentMethod;
-    if (paymentMethod === "card") {
-      payment.cardInfo = {
-        cardNumber: cardNumber || "****",
-        holderName: holderName || "Client Payment",
-      };
-    }
-    await payment.save();
-
-    res.json({
-      message: "Payment confirmed successfully",
-      payment,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};

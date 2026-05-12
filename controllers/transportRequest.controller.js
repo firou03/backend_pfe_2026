@@ -1,45 +1,44 @@
 const TransportRequest = require("../models/transportRequest.model");
-const Payment = require("../models/Payment");
 const User = require("../models/user.model");
-
-// Calculate price based on weight
-const calculatePrice = (weight) => {
-  if (weight <= 10) {
-    return 7; // 7 DT for up to 10 kg
-  } else {
-    return 7 + (weight - 10) * 1; // 7 DT base + 1 DT per kg above 10 kg
-  }
-};
+const Notification = require("../models/notification.model");
+const Payment = require("../models/Payment");
 
 // CREATE
 exports.createRequest = async (req, res) => {
   try {
+    // Convert weight to number and validate
+    const weight = parseInt(req.body.weight) || 0;
+    if (weight <= 0) {
+      return res.status(400).json({ message: "Le poids doit être supérieur à 0 kg" });
+    }
+
     const request = await TransportRequest.create({
       ...req.body,
+      weight: weight,
       client: req.user._id, // ✅ ID du client connecté
     });
 
-    // Auto-create payment invoice for the client
-    const amount = calculatePrice(req.body.weight);
-    const transactionId = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    const payment = await Payment.create({
-      transportRequest: request._id,
-      client: req.user._id,
-      transporteur: null, // Will be filled when transporteur accepts
-      weight: req.body.weight,
-      amount,
-      paymentMethod: "pending",
-      transactionId,
-      status: "pending",
-    });
-
-    request.payment = payment._id;
-    await request.save();
+    // 📢 Create notifications for all transporteurs
+    try {
+      const transporteurs = await User.find({ role: "transporteur" });
+      await Promise.all(
+        transporteurs.map((t) =>
+          Notification.create({
+            userId: t._id,
+            type: "new_request",
+            title: "Nouvelle demande disponible",
+            message: `Nouvelle demande: ${request.pickupLocation} → ${request.deliveryLocation}, ${request.weight}kg.`,
+            requestId: request._id,
+          })
+        )
+      );
+    } catch (notifError) {
+      console.error("⚠️ Error creating notifications:", notifError);
+    }
 
     res.status(201).json({
+      message: "Request created successfully",
       request,
-      payment,
     });
   } catch (error) {
     console.error("❌ Error creating request:", error);
@@ -74,14 +73,29 @@ exports.acceptRequest = async (req, res) => {
     if (request.status !== "pending")
       return res.status(400).json({ message: "Already accepted" });
 
-    request.status = "accepted";
+    request.status = "accepted_by_transporter";
     request.transporteur = req.user._id;
+    request.acceptedAt = new Date();
+    request.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h from now
     await request.save();
 
     // Update payment with transporteur info if exists
     if (request.payment) {
       request.payment.transporteur = req.user._id;
       await request.payment.save();
+    }
+
+    // 📢 Create notification for the client
+    try {
+      await Notification.create({
+        userId: request.client,
+        type: "request_accepted",
+        title: "Votre demande a été acceptée !",
+        message: `Un transporteur a accepté votre demande ${request.pickupLocation} → ${request.deliveryLocation}. Vous avez 24h pour confirmer ou refuser.`,
+        requestId: request._id,
+      });
+    } catch (notifError) {
+      console.error("⚠️ Error creating notification:", notifError);
     }
 
     res.json({
@@ -108,7 +122,7 @@ exports.getMesRequests = async (req, res) => {
   try {
     const requests = await TransportRequest.find({
       transporteur: req.user._id,
-      status: { $in: ["accepted", "delivered"] }
+      status: { $in: ["accepted", "accepted_by_transporter", "confirmed", "delivered"] }
     })
       .populate("client", "name email user_image phone location address city role")
       .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews")
@@ -203,6 +217,11 @@ exports.deliverRequest = async (req, res) => {
       return res.status(403).json({ message: "Non autorisé" });
     }
 
+    // Allow delivery from confirmed, accepted_by_transporter, or accepted status
+    if (!["confirmed", "accepted_by_transporter", "accepted"].includes(request.status)) {
+      return res.status(400).json({ message: "Status doit être confirmé ou accepté pour livrer" });
+    }
+
     // ── 1. Mark request as delivered ──────────────────────────────────────
     request.status = "delivered";
     await request.save();
@@ -268,6 +287,110 @@ exports.deliverRequest = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ deliverRequest error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// CONFIRM TRANSPORT REQUEST (client confirms the transporter)
+exports.confirmTransportRequest = async (req, res) => {
+  try {
+    const request = await TransportRequest.findById(req.params.id);
+
+    if (!request)
+      return res.status(404).json({ message: "Request not found" });
+
+    // Verify only client can confirm
+    if (request.client.toString() !== req.user._id.toString())
+      return res.status(403).json({ message: "Only client can confirm" });
+
+    // Verify status is accepted_by_transporter
+    if (request.status !== "accepted_by_transporter")
+      return res.status(400).json({ message: "Request is not in accepted status" });
+
+    // Verify not expired
+    if (request.expiresAt && new Date() > request.expiresAt)
+      return res.status(400).json({ message: "Confirmation window has expired" });
+
+    request.status = "confirmed";
+    request.confirmedAt = new Date();
+    await request.save();
+
+    // 📢 Create notification for the transporteur
+    try {
+      await Notification.create({
+        userId: request.transporteur,
+        type: "delivery_confirmed",
+        title: "Livraison confirmée !",
+        message: `Le client a confirmé la demande ${request.pickupLocation} → ${request.deliveryLocation}. Vous pouvez procéder à la livraison.`,
+        requestId: request._id,
+      });
+    } catch (notifError) {
+      console.error("⚠️ Error creating notification:", notifError);
+    }
+
+    res.json({
+      message: "Request confirmed successfully",
+      request,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// REFUSE TRANSPORT REQUEST (client refuses the transporter)
+exports.refuseTransportRequest = async (req, res) => {
+  try {
+    const request = await TransportRequest.findById(req.params.id);
+
+    if (!request)
+      return res.status(404).json({ message: "Request not found" });
+
+    // Verify only client can refuse
+    if (request.client.toString() !== req.user._id.toString())
+      return res.status(403).json({ message: "Only client can refuse" });
+
+    // Verify status is accepted_by_transporter
+    if (request.status !== "accepted_by_transporter")
+      return res.status(400).json({ message: "Request is not in accepted status" });
+
+    const transporteurId = request.transporteur; // Store transporteur ID before clearing
+
+    request.status = "cancelled";
+    request.cancelledAt = new Date();
+    request.transporteur = null; // Reset transporteur
+    await request.save();
+
+    // 📢 Create notification for the transporteur
+    try {
+      await Notification.create({
+        userId: transporteurId,
+        type: "request_cancelled",
+        title: "Demande refusée",
+        message: `Le client a refusé la demande ${request.pickupLocation} → ${request.deliveryLocation}.`,
+        requestId: request._id,
+      });
+    } catch (notifError) {
+      console.error("⚠️ Error creating notification:", notifError);
+    }
+
+    res.json({
+      message: "Request refused successfully",
+      request,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET CLIENT REQUESTS (for client dashboard)
+exports.getClientRequests = async (req, res) => {
+  try {
+    const requests = await TransportRequest.find({ client: req.user._id })
+      .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews")
+      .sort({ createdAt: -1 });
+
+    res.json(requests);
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };

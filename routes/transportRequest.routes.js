@@ -29,5 +29,14 @@ router.put("/update-location/:id", auth, controller.updateLocation);
 // Deliver request
 router.put("/deliver/:id", auth, controller.deliverRequest);
 
+// Confirm request (client confirms transporter)
+router.patch("/:id/confirm", auth, controller.confirmTransportRequest);
+
+// Refuse request (client refuses transporter)
+router.patch("/:id/refuse", auth, controller.refuseTransportRequest);
+
+// Get client requests (for client dashboard)
+router.get("/my-requests/client", auth, controller.getClientRequests);
+
 // ✅ module.exports TOUJOURS à la fin
 module.exports = router;

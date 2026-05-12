@@ -34,6 +34,9 @@ app.use("/api/payments", paymentRoutes);
 const adminRoutes = require("./routes/admin.routes");
 app.use("/api/admin", adminRoutes);
 
+const notificationRoutes = require("./routes/notification.routes");
+app.use("/api/notifications", notificationRoutes);
+
 const { connectToMongoDB } = require("./config/db");
 var indexRouter = require("./routes/index");
 var usersRouter = require("./routes/users.routes");

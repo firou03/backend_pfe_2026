@@ -1,5 +1,6 @@
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
+const Notification = require('../models/notification.model');
 
 // Créer ou récupérer une conversation
 exports.createConversation = async (req, res) => {
@@ -53,13 +54,36 @@ exports.sendMessage = async (req, res) => {
     const savedMessage = await newMessage.save();
 
     // Mettre à jour le "dernier message" dans la conversation
-    await Conversation.findByIdAndUpdate(req.params.conversationId, {
+    const conversation = await Conversation.findByIdAndUpdate(req.params.conversationId, {
       lastMessage: {
         content: req.body.content,
         senderId: req.user.id,
         createdAt: new Date()
       }
-    });
+    }, { new: true }).populate('participants', 'name email');
+
+    // 📢 Create notifications for all other participants
+    if (conversation && conversation.participants) {
+      const otherParticipants = conversation.participants.filter(
+        p => p._id.toString() !== req.user.id.toString()
+      );
+
+      try {
+        await Promise.all(
+          otherParticipants.map((participant) =>
+            Notification.create({
+              userId: participant._id,
+              type: "new_message",
+              title: "Nouveau message",
+              message: `${conversation.participants.find(p => p._id.toString() === req.user.id.toString())?.name || 'Utilisateur'}: ${req.body.content.substring(0, 50)}${req.body.content.length > 50 ? '...' : ''}`,
+              conversationId: req.params.conversationId,
+            })
+          )
+        );
+      } catch (notifError) {
+        console.error("⚠️ Error creating notification:", notifError);
+      }
+    }
 
     res.status(200).json(savedMessage);
   } catch (err) { res.status(500).json(err); }

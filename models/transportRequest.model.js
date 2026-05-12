@@ -35,7 +35,7 @@ const transportRequestSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "accepted", "delivered"],
+      enum: ["pending", "accepted_by_transporter", "confirmed", "cancelled", "expired", "delivered"],
       default: "pending",
     },
     transporterLocation: {
@@ -46,6 +46,22 @@ const transportRequestSchema = new mongoose.Schema(
     payment: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Payment",
+      default: null,
+    },
+    confirmedAt: {
+      type: Date,
+      default: null,
+    },
+    cancelledAt: {
+      type: Date,
+      default: null,
+    },
+    acceptedAt: {
+      type: Date,
+      default: null,
+    },
+    expiresAt: {
+      type: Date,
       default: null,
     },
   },
