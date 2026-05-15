@@ -9,7 +9,28 @@ const app = express();
 require("dotenv").config(); //3
 
 const corsOptions = {
-  origin: ["http://localhost:3000", "http://localhost:8081", "http://localhost:8082", "http://localhost:19006"],
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    const allowList = [
+      "http://localhost:3000",
+      "http://localhost:8081",
+      "http://localhost:8082",
+      "http://localhost:19006",
+    ];
+    if (allowList.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    // Expo / dev sur le même réseau local (navigateur ou outils)
+    if (/^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.0\.2\.2)(:\d+)?$/i.test(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(null, false);
+  },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
@@ -68,7 +89,8 @@ app.use(function (err, req, res, next) {
 
 //2
 const server = http.createServer(app);
-server.listen(process.env.PORT, () => {
+const port = process.env.PORT || 5000;
+server.listen(port, "0.0.0.0", () => {
   connectToMongoDB();
-  console.log("Server is running on http://localhost:" + process.env.PORT);
+  console.log(`Server is running on http://localhost:${port} (LAN: port ${port})`);
 });
