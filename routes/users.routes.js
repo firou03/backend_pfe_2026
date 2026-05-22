@@ -3,6 +3,8 @@ var router = express.Router();
 const userController = require('../controllers/user.controller');
 const upload = require('../middlewares/uploadfile');
 const logMiddleware = require('../middlewares/LogMiddleware');
+const auth = require('../middlewares/authMiddleware');
+const checkRole = require('../middlewares/checkRole');
 
 /* GET users listing. */
 
@@ -18,7 +20,9 @@ router.post('/createUserAdmin', userController.createUserAdmin);
 
 router.post('/createUserModerateur', userController.createUserModerateur);
 
-router.delete('/deleteUser/:id', userController.deleteUser);
+router.patch('/banUser/:id', auth, checkRole('admin'), userController.banUser);
+router.patch('/unbanUser/:id', auth, checkRole('admin'), userController.unbanUser);
+router.delete('/deleteUser/:id', auth, checkRole('admin'), userController.banUser);
 
 router.put('/updateUser/:id', userController.updateUser);
 

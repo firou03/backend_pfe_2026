@@ -1,4 +1,5 @@
 const userModel = require("../models/user.model");
+const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 // module.exports.esm = async (req, res) => {
 //   try {
@@ -112,19 +113,75 @@ module.exports.updateUser = async (req, res) => {
   }
 };
 
-module.exports.deleteUser = async (req, res) => {
+/** Suspend user for 1 month (replaces permanent delete for admin UI) */
+module.exports.banUser = async (req, res) => {
   try {
     const userId = req.params.id;
-    const deletedUser = await userModel.findByIdAndDelete(userId);
-    if (!deletedUser) {
-      throw new Error("User not found");
+    const user = await userModel.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "Utilisateur introuvable" });
     }
-    res
-      .status(200)
-      .json({ message: "User deleted successfully", data: deletedUser });
+
+    if (user.role === "admin") {
+      return res.status(403).json({ message: "Impossible de bannir un administrateur" });
+    }
+
+    if (req.user && user._id.toString() === req.user._id.toString()) {
+      return res.status(403).json({ message: "Vous ne pouvez pas vous bannir vous-même" });
+    }
+
+    const bannedUntil = new Date(Date.now() + ONE_MONTH_MS);
+
+    user.isBanned = true;
+    user.bannedAt = new Date();
+    user.bannedUntil = bannedUntil;
+    user.bannedBy = req.user?._id || null;
+    await user.save();
+
+    const safe = user.toObject();
+    delete safe.password;
+
+    res.status(200).json({
+      message: "Utilisateur banni pour 1 mois",
+      data: safe,
+      bannedUntil,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+};
+
+module.exports.unbanUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const user = await userModel.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "Utilisateur introuvable" });
+    }
+
+    user.isBanned = false;
+    user.bannedAt = null;
+    user.bannedUntil = null;
+    user.bannedBy = null;
+    await user.save();
+
+    const safe = user.toObject();
+    delete safe.password;
+
+    res.status(200).json({
+      message: "Suspension levée",
+      data: safe,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/** @deprecated Prefer banUser — kept for compatibility */
+module.exports.deleteUser = async (req, res) => {
+  return module.exports.banUser(req, res);
 };
 
 module.exports.createUserWithImage = async (req, res) => {

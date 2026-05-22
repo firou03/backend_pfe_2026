@@ -70,9 +70,34 @@ const userSchema = new mongoose.Schema(
     // Password reset fields
     resetPasswordToken: String,
     resetPasswordExpires: Date,
+
+    // Admin suspension (1 month ban)
+    isBanned: {
+      type: Boolean,
+      default: false,
+    },
+    bannedAt: {
+      type: Date,
+      default: null,
+    },
+    bannedUntil: {
+      type: Date,
+      default: null,
+    },
+    bannedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
   },
   { timestamps: true }
 );
+
+userSchema.methods.isCurrentlyBanned = function isCurrentlyBanned() {
+  if (!this.isBanned) return false;
+  if (this.bannedUntil && new Date() > this.bannedUntil) return false;
+  return true;
+};
 
 // Hash password before saving
 userSchema.pre("save", async function () {

@@ -3,6 +3,11 @@ const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const User = require("../models/user.model");
+const {
+  clearExpiredBanIfNeeded,
+  isUserBanned,
+  banMessage,
+} = require("../utils/userBan");
 
 // REGISTER (Sign Up)
 exports.register = async (req, res) => {
@@ -75,6 +80,15 @@ exports.login = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    await clearExpiredBanIfNeeded(user);
+
+    if (isUserBanned(user)) {
+      return res.status(403).json({
+        message: banMessage(user),
+        bannedUntil: user.bannedUntil,
+      });
     }
 
     const match = await bcrypt.compare(password, user.password);

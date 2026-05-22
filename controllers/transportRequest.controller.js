@@ -53,7 +53,7 @@ exports.createRequest = async (req, res) => {
 exports.getAllRequests = async (req, res) => {
   try {
     const requests = await TransportRequest.find()
-      .populate("client", "name email user_image phone location address city role")
+      .populate("client", "name email user_image phone location address city role averageRating totalReviews")
       .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews");
 
     res.json(requests);
@@ -65,7 +65,7 @@ exports.getAllRequests = async (req, res) => {
 // ACCEPT REQUEST
 exports.acceptRequest = async (req, res) => {
   try {
-    const request = await TransportRequest.findById(req.params.id).populate("payment");
+    const request = await TransportRequest.findById(req.params.id);
 
     if (!request)
       return res.status(404).json({ message: "Request not found" });
@@ -79,16 +79,25 @@ exports.acceptRequest = async (req, res) => {
     request.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h from now
     await request.save();
 
-    // Update payment with transporteur info if exists
+    // Update payment with transporteur info (avoid full document re-validation)
     if (request.payment) {
-      request.payment.transporteur = req.user._id;
-      await request.payment.save();
+      try {
+        await Payment.findByIdAndUpdate(
+          request.payment,
+          { transporteur: req.user._id },
+          { runValidators: false }
+        );
+      } catch (payErr) {
+        console.error("⚠️ Payment update on accept:", payErr.message);
+      }
     }
+
+    const clientId = request.client?._id || request.client;
 
     // 📢 Create notification for the client
     try {
       await Notification.create({
-        userId: request.client,
+        userId: clientId,
         type: "request_accepted",
         title: "Votre demande a été acceptée !",
         message: `Un transporteur a accepté votre demande ${request.pickupLocation} → ${request.deliveryLocation}. Vous avez 24h pour confirmer ou refuser.`,
@@ -98,11 +107,16 @@ exports.acceptRequest = async (req, res) => {
       console.error("⚠️ Error creating notification:", notifError);
     }
 
+    const populated = await TransportRequest.findById(request._id)
+      .populate("client", "name email user_image phone location address city role averageRating totalReviews")
+      .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews");
+
     res.json({
       message: "Request accepted successfully",
-      request,
+      request: populated,
     });
   } catch (error) {
+    console.error("❌ acceptRequest error:", error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -110,7 +124,7 @@ exports.acceptRequest = async (req, res) => {
 exports.getPendingRequests = async (req, res) => {
   try {
     const requests = await TransportRequest.find({ status: "pending" })
-      .populate("client", "name email user_image phone location address city role")
+      .populate("client", "name email user_image phone location address city role averageRating totalReviews")
       .sort({ createdAt: -1 });
     res.json(requests);
   } catch (error) {
@@ -124,7 +138,7 @@ exports.getMesRequests = async (req, res) => {
       transporteur: req.user._id,
       status: { $in: ["accepted", "accepted_by_transporter", "confirmed", "delivered"] }
     })
-      .populate("client", "name email user_image phone location address city role")
+      .populate("client", "name email user_image phone location address city role averageRating totalReviews")
       .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews")
       .sort({ createdAt: -1 });
     
@@ -140,7 +154,7 @@ exports.getMyRequests = async (req, res) => {
     const requests = await TransportRequest.find({
       client: req.user._id,
     })
-      .populate("client", "name email user_image phone location address city role")
+      .populate("client", "name email user_image phone location address city role averageRating totalReviews")
       .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews")
       .sort({ createdAt: -1 });
 
@@ -291,6 +305,14 @@ exports.deliverRequest = async (req, res) => {
   }
 };
 
+const CLIENT_CONFIRM_STATUSES = ["accepted_by_transporter", "accepted"];
+
+function getRequestClientId(request) {
+  const c = request.client;
+  if (!c) return null;
+  return (c._id || c).toString();
+}
+
 // CONFIRM TRANSPORT REQUEST (client confirms the transporter)
 exports.confirmTransportRequest = async (req, res) => {
   try {
@@ -299,17 +321,21 @@ exports.confirmTransportRequest = async (req, res) => {
     if (!request)
       return res.status(404).json({ message: "Request not found" });
 
-    // Verify only client can confirm
-    if (request.client.toString() !== req.user._id.toString())
+    const clientId = getRequestClientId(request);
+    if (!clientId || clientId !== req.user._id.toString())
       return res.status(403).json({ message: "Only client can confirm" });
 
-    // Verify status is accepted_by_transporter
-    if (request.status !== "accepted_by_transporter")
-      return res.status(400).json({ message: "Request is not in accepted status" });
+    if (request.status === "confirmed")
+      return res.status(400).json({ message: "Cette demande est déjà confirmée." });
 
-    // Verify not expired
-    if (request.expiresAt && new Date() > request.expiresAt)
-      return res.status(400).json({ message: "Confirmation window has expired" });
+    if (!CLIENT_CONFIRM_STATUSES.includes(request.status))
+      return res.status(400).json({
+        message: `Impossible de confirmer (statut actuel : ${request.status}).`,
+        currentStatus: request.status,
+      });
+
+    if (!request.transporteur)
+      return res.status(400).json({ message: "Aucun transporteur assigné à cette demande." });
 
     request.status = "confirmed";
     request.confirmedAt = new Date();
@@ -345,13 +371,15 @@ exports.refuseTransportRequest = async (req, res) => {
     if (!request)
       return res.status(404).json({ message: "Request not found" });
 
-    // Verify only client can refuse
-    if (request.client.toString() !== req.user._id.toString())
+    const clientId = getRequestClientId(request);
+    if (!clientId || clientId !== req.user._id.toString())
       return res.status(403).json({ message: "Only client can refuse" });
 
-    // Verify status is accepted_by_transporter
-    if (request.status !== "accepted_by_transporter")
-      return res.status(400).json({ message: "Request is not in accepted status" });
+    if (!CLIENT_CONFIRM_STATUSES.includes(request.status))
+      return res.status(400).json({
+        message: `Impossible de refuser (statut actuel : ${request.status}).`,
+        currentStatus: request.status,
+      });
 
     const transporteurId = request.transporteur; // Store transporteur ID before clearing
 
