@@ -35,6 +35,9 @@ router.patch("/:id/confirm", auth, controller.confirmTransportRequest);
 // Refuse request (client refuses transporter)
 router.patch("/:id/refuse", auth, controller.refuseTransportRequest);
 
+// Cancel pending request (client cancels before acceptance)
+router.patch("/:id/cancel", auth, controller.cancelTransportRequest);
+
 // Get client requests (for client dashboard)
 router.get("/my-requests/client", auth, controller.getClientRequests);
 

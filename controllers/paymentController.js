@@ -1,14 +1,13 @@
 const Payment = require("../models/Payment");
 const TransportRequest = require("../models/transportRequest.model");
+const {
+  calculatePrice,
+  createTransactionId,
+  getBillableWeight,
+} = require("../services/payment.service");
 
 // Calculate price based on weight
-exports.calculatePrice = (weight) => {
-  if (weight <= 10) {
-    return 7; // 7 DT for up to 10 kg
-  } else {
-    return 7 + (weight - 10) * 1; // 7 DT base + 1 DT per kg above 10 kg
-  }
-};
+exports.calculatePrice = calculatePrice;
 
 // Get price for a request
 exports.getPriceForRequest = async (req, res) => {
@@ -21,12 +20,12 @@ exports.getPriceForRequest = async (req, res) => {
     }
 
     // Ensure weight is a number
-    const weight = parseFloat(request.weight) || 0;
+    const weight = getBillableWeight(request.weight);
     if (weight <= 0) {
       return res.status(400).json({ error: "Le poids du colis n'est pas défini" });
     }
 
-    const amount = exports.calculatePrice(weight);
+    const amount = calculatePrice(weight);
 
     res.json({
       weight: weight,
@@ -54,13 +53,13 @@ exports.createPayment = async (req, res) => {
     }
 
     // Validate weight (same as getPriceForRequest)
-    const weight = parseFloat(request.weight) || 0;
+    const weight = getBillableWeight(request.weight);
     if (weight <= 0) {
       return res.status(400).json({ error: "Le poids du colis n'est pas défini" });
     }
 
-    const amount = exports.calculatePrice(weight);
-    const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const amount = calculatePrice(weight);
+    const transactionId = createTransactionId();
 
     const payment = await Payment.create({
       transportRequest: requestId,
@@ -124,6 +123,33 @@ exports.getUserPayments = async (req, res) => {
       .sort({ createdAt: -1 });
 
     res.json(payments);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Confirm a pending payment from the client payments page
+exports.confirmPayment = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const payment = await Payment.findById(paymentId);
+
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    if (payment.client.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized to confirm this payment" });
+    }
+
+    payment.status = "completed";
+    await payment.save();
+
+    res.json({
+      message: "Payment confirmed successfully",
+      payment,
+      transactionId: payment.transactionId,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

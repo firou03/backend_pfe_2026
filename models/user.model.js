@@ -38,6 +38,17 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    permisVerification: {
+      score: { type: Number, default: null },
+      verdict: {
+        type: String,
+        enum: ["genuine", "suspicious", "fake", null],
+        default: null,
+      },
+      reasons: { type: [String], default: [] },
+      verifiedAt: { type: Date, default: null },
+    },
+
     role: {
       type: String,
       enum: ["admin", "client", "transporteur"],

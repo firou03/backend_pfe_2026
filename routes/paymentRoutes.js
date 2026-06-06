@@ -9,6 +9,9 @@ router.get("/price/:requestId", paymentController.getPriceForRequest);
 // Create payment
 router.post("/create", authMiddleware, paymentController.createPayment);
 
+// Confirm pending payment
+router.post("/confirm/:paymentId", authMiddleware, paymentController.confirmPayment);
+
 // Get payment details
 router.get("/:paymentId", paymentController.getPayment);
 

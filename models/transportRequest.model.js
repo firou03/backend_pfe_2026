@@ -1,4 +1,8 @@
 const mongoose = require("mongoose");
+const {
+  TRANSPORT_REQUEST_STATUS,
+  TRANSPORT_REQUEST_STATUS_VALUES,
+} = require("../constants/transportRequestStatus");
 
 const transportRequestSchema = new mongoose.Schema(
   {
@@ -35,8 +39,8 @@ const transportRequestSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "accepted_by_transporter", "confirmed", "cancelled", "expired", "delivered"],
-      default: "pending",
+      enum: TRANSPORT_REQUEST_STATUS_VALUES,
+      default: TRANSPORT_REQUEST_STATUS.PENDING,
     },
     transporterLocation: {
       lat: { type: Number },

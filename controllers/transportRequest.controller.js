@@ -2,6 +2,19 @@ const TransportRequest = require("../models/transportRequest.model");
 const User = require("../models/user.model");
 const Notification = require("../models/notification.model");
 const Payment = require("../models/Payment");
+const {
+  CLIENT_CONFIRM_STATUSES,
+  DELIVERABLE_STATUSES,
+  TRACKABLE_STATUSES,
+  TRANSPORTER_VISIBLE_STATUSES,
+  TRANSPORT_REQUEST_STATUS,
+} = require("../constants/transportRequestStatus");
+const { calculatePrice } = require("../services/payment.service");
+const {
+  startOfToday,
+  isPastRequestDate,
+  expirePastRequests,
+} = require("../utils/requestDate");
 
 // CREATE
 exports.createRequest = async (req, res) => {
@@ -70,10 +83,16 @@ exports.acceptRequest = async (req, res) => {
     if (!request)
       return res.status(404).json({ message: "Request not found" });
 
-    if (request.status !== "pending")
+    if (request.status !== TRANSPORT_REQUEST_STATUS.PENDING)
       return res.status(400).json({ message: "Already accepted" });
 
-    request.status = "accepted_by_transporter";
+    if (isPastRequestDate(request.date)) {
+      request.status = TRANSPORT_REQUEST_STATUS.EXPIRED;
+      await request.save();
+      return res.status(400).json({ message: "Cette demande est expirée (date passée)" });
+    }
+
+    request.status = TRANSPORT_REQUEST_STATUS.ACCEPTED_BY_TRANSPORTER;
     request.transporteur = req.user._id;
     request.acceptedAt = new Date();
     request.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h from now
@@ -123,7 +142,12 @@ exports.acceptRequest = async (req, res) => {
 // GET PENDING ONLY
 exports.getPendingRequests = async (req, res) => {
   try {
-    const requests = await TransportRequest.find({ status: "pending" })
+    await expirePastRequests();
+    const today = startOfToday();
+    const requests = await TransportRequest.find({
+      status: TRANSPORT_REQUEST_STATUS.PENDING,
+      date: { $gte: today },
+    })
       .populate("client", "name email user_image phone location address city role averageRating totalReviews")
       .sort({ createdAt: -1 });
     res.json(requests);
@@ -134,9 +158,10 @@ exports.getPendingRequests = async (req, res) => {
 // GET MES REQUESTS (transporteur connecté)
 exports.getMesRequests = async (req, res) => {
   try {
+    await expirePastRequests();
     const requests = await TransportRequest.find({
       transporteur: req.user._id,
-      status: { $in: ["accepted", "accepted_by_transporter", "confirmed", "delivered"] }
+      status: { $in: TRANSPORTER_VISIBLE_STATUSES },
     })
       .populate("client", "name email user_image phone location address city role averageRating totalReviews")
       .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews")
@@ -151,6 +176,7 @@ exports.getMesRequests = async (req, res) => {
 // GET MY REQUESTS (client connecté)
 exports.getMyRequests = async (req, res) => {
   try {
+    await expirePastRequests();
     const requests = await TransportRequest.find({
       client: req.user._id,
     })
@@ -167,6 +193,10 @@ exports.getMyRequests = async (req, res) => {
 // UPDATE LOCATION (transporteur connecté)
 exports.updateLocation = async (req, res) => {
   try {
+    if (req.user.role !== "transporteur") {
+      return res.status(403).json({ message: "Seul le transporteur peut mettre à jour la position" });
+    }
+
     const { lat, lng, latitude, longitude } = req.body;
 
     const parsedLat = Number(lat ?? latitude);
@@ -175,7 +205,7 @@ exports.updateLocation = async (req, res) => {
     if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) {
       return res.status(400).json({
         message:
-          "Invalid location payload. Provide numeric lat/lng or latitude/longitude.",
+          "Coordonnées invalides. Fournissez lat et lng numériques.",
       });
     }
 
@@ -185,14 +215,16 @@ exports.updateLocation = async (req, res) => {
     }
 
     if (
-      request.transporteur &&
+      !request.transporteur ||
       request.transporteur.toString() !== req.user._id.toString()
     ) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ message: "Accès refusé pour cette demande" });
     }
 
-    if (!request.transporteur) {
-      request.transporteur = req.user._id;
+    if (!TRACKABLE_STATUSES.includes(String(request.status))) {
+      return res.status(400).json({
+        message: "Impossible de mettre à jour la position pour cette demande",
+      });
     }
 
     request.transporterLocation = {
@@ -203,9 +235,25 @@ exports.updateLocation = async (req, res) => {
 
     await request.save();
 
+    try {
+      await Notification.create({
+        userId: request.client,
+        type: "location_update",
+        title: "Position du transporteur mise à jour",
+        message: `Nouvelle position pour ${request.pickupLocation} → ${request.deliveryLocation}`,
+        requestId: request._id,
+      });
+    } catch (notifError) {
+      console.error("⚠️ Error creating location notification:", notifError);
+    }
+
+    const updated = await TransportRequest.findById(request._id)
+      .populate("client", "name email user_image phone location address city role averageRating totalReviews")
+      .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews");
+
     res.json({
       message: "Location updated",
-      request,
+      request: updated,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -220,7 +268,7 @@ exports.deliverRequest = async (req, res) => {
     if (!request)
       return res.status(404).json({ message: "Request not found" });
 
-    if (request.status === "delivered")
+    if (request.status === TRANSPORT_REQUEST_STATUS.DELIVERED)
       return res.status(400).json({ message: "Déjà livré" });
 
     // Only the assigned transporteur can deliver
@@ -231,13 +279,13 @@ exports.deliverRequest = async (req, res) => {
       return res.status(403).json({ message: "Non autorisé" });
     }
 
-    // Allow delivery from confirmed, accepted_by_transporter, or accepted status
-    if (!["confirmed", "accepted_by_transporter", "accepted"].includes(request.status)) {
+    // Allow delivery from confirmed or accepted statuses.
+    if (!DELIVERABLE_STATUSES.includes(request.status)) {
       return res.status(400).json({ message: "Status doit être confirmé ou accepté pour livrer" });
     }
 
     // ── 1. Mark request as delivered ──────────────────────────────────────
-    request.status = "delivered";
+    request.status = TRANSPORT_REQUEST_STATUS.DELIVERED;
     await request.save();
 
     // ── 2. Determine the amount to credit ────────────────────────────────
@@ -272,7 +320,6 @@ exports.deliverRequest = async (req, res) => {
       }
     } else {
       // No payment record — calculate from weight
-      const calculatePrice = (w) => (w <= 10 ? 7 : 7 + (w - 10));
       amount = calculatePrice(request.weight || 0);
     }
 
@@ -305,8 +352,6 @@ exports.deliverRequest = async (req, res) => {
   }
 };
 
-const CLIENT_CONFIRM_STATUSES = ["accepted_by_transporter", "accepted"];
-
 function getRequestClientId(request) {
   const c = request.client;
   if (!c) return null;
@@ -325,7 +370,7 @@ exports.confirmTransportRequest = async (req, res) => {
     if (!clientId || clientId !== req.user._id.toString())
       return res.status(403).json({ message: "Only client can confirm" });
 
-    if (request.status === "confirmed")
+    if (request.status === TRANSPORT_REQUEST_STATUS.CONFIRMED)
       return res.status(400).json({ message: "Cette demande est déjà confirmée." });
 
     if (!CLIENT_CONFIRM_STATUSES.includes(request.status))
@@ -337,7 +382,7 @@ exports.confirmTransportRequest = async (req, res) => {
     if (!request.transporteur)
       return res.status(400).json({ message: "Aucun transporteur assigné à cette demande." });
 
-    request.status = "confirmed";
+    request.status = TRANSPORT_REQUEST_STATUS.CONFIRMED;
     request.confirmedAt = new Date();
     await request.save();
 
@@ -383,7 +428,7 @@ exports.refuseTransportRequest = async (req, res) => {
 
     const transporteurId = request.transporteur; // Store transporteur ID before clearing
 
-    request.status = "cancelled";
+    request.status = TRANSPORT_REQUEST_STATUS.CANCELLED;
     request.cancelledAt = new Date();
     request.transporteur = null; // Reset transporteur
     await request.save();
@@ -410,9 +455,53 @@ exports.refuseTransportRequest = async (req, res) => {
   }
 };
 
+// CANCEL PENDING REQUEST (client cancels before any transporter accepts)
+exports.cancelTransportRequest = async (req, res) => {
+  try {
+    const request = await TransportRequest.findById(req.params.id);
+
+    if (!request)
+      return res.status(404).json({ message: "Request not found" });
+
+    const clientId = getRequestClientId(request);
+    if (!clientId || clientId !== req.user._id.toString())
+      return res.status(403).json({ message: "Seul le client peut annuler cette demande" });
+
+    if (request.status !== TRANSPORT_REQUEST_STATUS.PENDING)
+      return res.status(400).json({
+        message: "Seules les demandes en attente (non acceptées) peuvent être annulées.",
+        currentStatus: request.status,
+      });
+
+    request.status = TRANSPORT_REQUEST_STATUS.CANCELLED;
+    request.cancelledAt = new Date();
+    await request.save();
+
+    if (request.payment) {
+      try {
+        await Payment.findByIdAndUpdate(
+          request.payment,
+          { status: "cancelled" },
+          { runValidators: false }
+        );
+      } catch (payErr) {
+        console.error("⚠️ Payment cancel on request cancel:", payErr.message);
+      }
+    }
+
+    res.json({
+      message: "Demande annulée avec succès",
+      request,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // GET CLIENT REQUESTS (for client dashboard)
 exports.getClientRequests = async (req, res) => {
   try {
+    await expirePastRequests();
     const requests = await TransportRequest.find({ client: req.user._id })
       .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews")
       .sort({ createdAt: -1 });

@@ -16,6 +16,7 @@ const notificationSchema = new mongoose.Schema(
         "new_request",
         "new_review",
         "delivery_confirmed",
+        "location_update",
         "new_message",
       ],
       required: true,

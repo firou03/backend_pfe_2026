@@ -1,6 +1,10 @@
 const TransportRequest = require("../models/transportRequest.model");
 const Payment = require("../models/Payment");
 const User = require("../models/user.model");
+const {
+  LEGACY_ACCEPTED_STATUS,
+  TRANSPORT_REQUEST_STATUS,
+} = require("../constants/transportRequestStatus");
 
 // Get dashboard statistics
 exports.getDashboardStats = async (req, res) => {
@@ -12,10 +16,12 @@ exports.getDashboardStats = async (req, res) => {
       .sort({ createdAt: -1 });
 
     const totalRequests     = allRequests.length;
-    const pendingRequests   = allRequests.filter(r => r.status === "pending").length;
-    const acceptedRequests  = allRequests.filter(r => r.status === "accepted").length;
-    const deliveredRequests = allRequests.filter(r => r.status === "delivered").length;
-    const cancelledRequests = allRequests.filter(r => r.status === "cancelled").length;
+    const pendingRequests   = allRequests.filter(r => r.status === TRANSPORT_REQUEST_STATUS.PENDING).length;
+    const acceptedRequests  = allRequests.filter(r =>
+      [LEGACY_ACCEPTED_STATUS, TRANSPORT_REQUEST_STATUS.ACCEPTED_BY_TRANSPORTER].includes(r.status)
+    ).length;
+    const deliveredRequests = allRequests.filter(r => r.status === TRANSPORT_REQUEST_STATUS.DELIVERED).length;
+    const cancelledRequests = allRequests.filter(r => r.status === TRANSPORT_REQUEST_STATUS.CANCELLED).length;
 
     // ── Revenue: sum of all transporteurs' totalRevenue ──────────────────
     const transporteurs = await User.find({ role: "transporteur" });
@@ -95,6 +101,35 @@ exports.getTransporteurRevenue = async (req, res) => {
       revenueFromPayments,
       completedDeliveries: payments.length,
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/admin/permis-status
+exports.getPermisStatus = async (req, res) => {
+  try {
+    const transporteurs = await User.find({ role: "transporteur" })
+      .select("name email permisPhoto permisVerification createdAt")
+      .sort({ createdAt: -1 });
+
+    const result = transporteurs.map((t) => ({
+      _id: t._id,
+      name: t.name,
+      email: t.email,
+      permisPhoto: t.permisPhoto,
+      verification: t.permisVerification?.verdict
+        ? {
+            score: t.permisVerification.score,
+            verdict: t.permisVerification.verdict,
+            reasons: t.permisVerification.reasons,
+            verifiedAt: t.permisVerification.verifiedAt,
+          }
+        : null,
+      registeredAt: t.createdAt,
+    }));
+
+    res.json({ transporteurs: result });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

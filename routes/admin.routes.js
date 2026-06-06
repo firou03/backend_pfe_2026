@@ -10,4 +10,7 @@ router.get("/dashboard-stats", adminController.getDashboardStats);
 router.get("/transporteur-revenue/:id", authMiddleware, adminController.getTransporteurRevenue);
 router.get("/transporteur-revenue", authMiddleware, adminController.getTransporteurRevenue);
 
+// Permis verification status for all transporteurs
+router.get("/permis-status", authMiddleware, adminController.getPermisStatus);
+
 module.exports = router;
