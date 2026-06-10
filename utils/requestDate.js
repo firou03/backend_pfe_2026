@@ -4,11 +4,10 @@ const {
   LEGACY_ACCEPTED_STATUS,
 } = require("../constants/transportRequestStatus");
 
-const EXPIRABLE_STATUSES = [
+/** Ne pas expirer les demandes en attente de confirmation client */
+const DATE_EXPIRABLE_STATUSES = [
   TRANSPORT_REQUEST_STATUS.PENDING,
-  TRANSPORT_REQUEST_STATUS.ACCEPTED_BY_TRANSPORTER,
   TRANSPORT_REQUEST_STATUS.CONFIRMED,
-  LEGACY_ACCEPTED_STATUS,
 ];
 
 function startOfToday() {
@@ -26,12 +25,31 @@ function isPastRequestDate(date) {
 
 async function expirePastRequests() {
   const today = startOfToday();
+  const now = new Date();
+
   await TransportRequest.updateMany(
     {
-      status: { $in: EXPIRABLE_STATUSES },
+      status: { $in: DATE_EXPIRABLE_STATUSES },
       date: { $lt: today },
     },
     { status: TRANSPORT_REQUEST_STATUS.EXPIRED }
+  );
+
+  await TransportRequest.updateMany(
+    {
+      status: {
+        $in: [
+          TRANSPORT_REQUEST_STATUS.ACCEPTED_BY_TRANSPORTER,
+          LEGACY_ACCEPTED_STATUS,
+        ],
+      },
+      expiresAt: { $ne: null, $lt: now },
+    },
+    {
+      status: TRANSPORT_REQUEST_STATUS.CANCELLED,
+      cancelledAt: now,
+      transporteur: null,
+    }
   );
 }
 

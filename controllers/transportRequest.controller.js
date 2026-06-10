@@ -223,7 +223,8 @@ exports.updateLocation = async (req, res) => {
 
     if (!TRACKABLE_STATUSES.includes(String(request.status))) {
       return res.status(400).json({
-        message: "Impossible de mettre à jour la position pour cette demande",
+        message: "Le suivi GPS n'est disponible qu'après confirmation du client.",
+        currentStatus: request.status,
       });
     }
 
@@ -279,9 +280,11 @@ exports.deliverRequest = async (req, res) => {
       return res.status(403).json({ message: "Non autorisé" });
     }
 
-    // Allow delivery from confirmed or accepted statuses.
     if (!DELIVERABLE_STATUSES.includes(request.status)) {
-      return res.status(400).json({ message: "Status doit être confirmé ou accepté pour livrer" });
+      return res.status(400).json({
+        message: "La livraison n'est possible qu'après confirmation du client.",
+        currentStatus: request.status,
+      });
     }
 
     // ── 1. Mark request as delivered ──────────────────────────────────────

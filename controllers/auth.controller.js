@@ -47,15 +47,30 @@ exports.register = async (req, res) => {
 
     const { name, email, password, role, dateNaissance } = req.body;
  const permisPhoto = req.file ? req.file.filename : null;
-    // check if user already exists
-    const existUser = await User.findOne({ email });
+
+    if (!name?.trim()) {
+      return res.status(400).json({ message: "Le nom est obligatoire." });
+    }
+    if (!email?.trim()) {
+      return res.status(400).json({ message: "L'email est obligatoire." });
+    }
+    if (!password) {
+      return res.status(400).json({ message: "Le mot de passe est obligatoire." });
+    }
+    if (role === "transporteur" && !permisPhoto) {
+      return res.status(400).json({
+        message: "Le permis de conduire est obligatoire pour les transporteurs.",
+      });
+    }
+
+    const existUser = await User.findOne({ email: email.trim().toLowerCase() });
     if (existUser) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({ message: "Un compte existe déjà avec cet email." });
     }
 
     const user = new User({
-      name,
-      email,
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
       password,
       role,
        dateNaissance: role === "transporteur" ? dateNaissance : null,
@@ -70,12 +85,17 @@ exports.register = async (req, res) => {
     }
 
     res.status(201).json({
-      message: "User registered successfully",
+      message: "Compte créé avec succès",
       user
     });
 
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Register error:", error);
+    if (error.name === "ValidationError") {
+      const { formatValidationError } = require("../utils/authErrors");
+      return res.status(400).json({ message: formatValidationError(error) });
+    }
+    res.status(500).json({ message: "Erreur serveur lors de l'inscription." });
   }
 };
 
@@ -85,6 +105,12 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    if (!email?.trim() || !password) {
+      return res.status(400).json({
+        message: "L'email et le mot de passe sont obligatoires.",
+      });
+    }
 
     // 🚀 Check for Static Admin Login
     if (email === "admin@gmail.com" && password === "Admin123") {
@@ -113,10 +139,10 @@ exports.login = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ message: "Aucun compte trouvé avec cet email." });
     }
 
     await clearExpiredBanIfNeeded(user);
@@ -131,7 +157,7 @@ exports.login = async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
 
     if (!match) {
-      return res.status(400).json({ message: "Wrong password" });
+      return res.status(400).json({ message: "Mot de passe incorrect." });
     }
 
     const token = jwt.sign(
@@ -148,7 +174,7 @@ exports.login = async (req, res) => {
 
   } catch (error) {
     console.error("Login error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Erreur serveur lors de la connexion." });
   }
 };
 

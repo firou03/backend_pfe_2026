@@ -12,7 +12,7 @@ router.get('/getAllUsers', logMiddleware, userController.getAllUsers);
 
 // router.get('/getUserById/:id', userController.getUserById); // DISABLED - Profile viewing access removed
 
-router.post('/createUser', upload.single('permis'), userController.createUser);
+router.post('/createUser', upload.singleWithError('permis'), userController.createUser);
 
 router.post('/createUserWithImage', upload.single('user_image'), logMiddleware, userController.createUserWithImage);
 

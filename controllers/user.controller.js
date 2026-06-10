@@ -1,4 +1,9 @@
 const userModel = require("../models/user.model");
+const {
+  duplicateKeyMessage,
+  formatValidationError,
+  isDuplicateKeyError,
+} = require("../utils/authErrors");
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 // module.exports.esm = async (req, res) => {
@@ -44,12 +49,38 @@ module.exports.getUserById = async (req, res) => {
 module.exports.createUser = async (req, res) => {
   try {
     const { name, email, password, role, dateNaissance } = req.body;
+
+    if (!name?.trim()) {
+      return res.status(400).json({ message: "Le nom est obligatoire." });
+    }
+    if (!email?.trim()) {
+      return res.status(400).json({ message: "L'email est obligatoire." });
+    }
+    if (!password) {
+      return res.status(400).json({ message: "Le mot de passe est obligatoire." });
+    }
+    if (!role || !["client", "transporteur"].includes(role)) {
+      return res.status(400).json({ message: "Rôle invalide (client ou transporteur)." });
+    }
+    if (role === "transporteur" && !req.file) {
+      return res.status(400).json({
+        message: "Le permis de conduire est obligatoire pour les transporteurs.",
+      });
+    }
+
+    const existing = await userModel.findOne({
+      email: email.trim().toLowerCase(),
+    });
+    if (existing) {
+      return res.status(400).json({ message: "Un compte existe déjà avec cet email." });
+    }
+
     const permisPhoto =
       role === "transporteur" && req.file ? req.file.filename : null;
 
     const newUser = new userModel({
-      name,
-      email,
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
       password,
       role,
       dateNaissance: role === "transporteur" ? dateNaissance : null,
@@ -59,12 +90,20 @@ module.exports.createUser = async (req, res) => {
     await newUser.save();
 
     res.status(201).json({
-      message: "User created successfully",
+      message: "Compte créé avec succès",
       data: newUser,
     });
   } catch (error) {
-    console.error(error); // 🔥 ADD THIS FOR DEBUG
-    res.status(500).json({ error: error.message });
+    console.error("createUser error:", error);
+    if (isDuplicateKeyError(error)) {
+      return res.status(400).json({ message: duplicateKeyMessage(error) });
+    }
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ message: formatValidationError(error) });
+    }
+    res.status(500).json({
+      message: error.message || "Erreur serveur lors de l'inscription.",
+    });
   }
 };
 
@@ -94,22 +133,53 @@ module.exports.createUserModerateur = async (req, res) => {
   }
 };
 
+const PROFILE_UPDATE_FIELDS = ["phone", "address", "city", "postalCode", "preference"];
+
+function pickProfileUpdate(body = {}) {
+  const updateData = {};
+  for (const key of PROFILE_UPDATE_FIELDS) {
+    if (body[key] !== undefined) {
+      updateData[key] = typeof body[key] === "string" ? body[key].trim() : body[key];
+    }
+  }
+  return updateData;
+}
+
+function toSafeUser(user) {
+  const safe = user.toObject ? user.toObject() : { ...user };
+  delete safe.password;
+  delete safe.resetPasswordToken;
+  delete safe.resetPasswordExpires;
+  return safe;
+}
+
 module.exports.updateUser = async (req, res) => {
   try {
     const userId = req.params.id;
-    const updateData = req.body;
-    
+    const updateData = pickProfileUpdate(req.body);
+
+    if (!Object.keys(updateData).length) {
+      return res.status(400).json({ message: "Aucune donnée de profil à mettre à jour." });
+    }
+
     const updatedUser = await userModel.findByIdAndUpdate(
       userId,
       { $set: updateData },
-      { new: true }
+      { new: true, runValidators: true }
     );
     if (!updatedUser) {
-      throw new Error("User not found");
+      return res.status(404).json({ message: "Utilisateur introuvable" });
     }
-    res.status(200).json({ message: "User updated successfully", data: updatedUser });
+
+    res.status(200).json({
+      message: "Profil mis à jour avec succès",
+      data: toSafeUser(updatedUser),
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (error?.name === "ValidationError") {
+      return res.status(400).json({ message: formatValidationError(error) });
+    }
+    res.status(500).json({ message: error.message || "Erreur lors de la mise à jour du profil" });
   }
 };
 
