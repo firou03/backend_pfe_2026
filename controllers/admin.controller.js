@@ -5,6 +5,7 @@ const {
   LEGACY_ACCEPTED_STATUS,
   TRANSPORT_REQUEST_STATUS,
 } = require("../constants/transportRequestStatus");
+const { enrichWithPrice } = require("../services/payment.service");
 
 // Get dashboard statistics
 exports.getDashboardStats = async (req, res) => {
@@ -64,7 +65,7 @@ exports.getDashboardStats = async (req, res) => {
         totalRevenue,        // from completed Payments
         adminRevenue,        // from admin User.totalRevenue
         weeklyRequests,
-        recentRequests: allRequests.slice(0, 8),
+        recentRequests: allRequests.slice(0, 8).map(enrichWithPrice),
       },
     });
   } catch (error) {

@@ -32,6 +32,7 @@ async function createAdmin() {
       email: "admin@gmail.com",
       password: hashedPassword,
       role: "admin",
+      isVerified: true,
       phone: "+216 92 123 456",
       city: "Tunis",
     });

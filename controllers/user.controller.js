@@ -4,6 +4,12 @@ const {
   formatValidationError,
   isDuplicateKeyError,
 } = require("../utils/authErrors");
+const { validateRegistrationEmail } = require("../utils/emailValidation");
+const {
+  sendVerificationAfterRegister,
+  handleExistingUnverifiedUser,
+} = require("../utils/registrationHelpers");
+const { verifyPermisInBackground } = require("../utils/permisVerification");
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 // module.exports.esm = async (req, res) => {
@@ -56,6 +62,12 @@ module.exports.createUser = async (req, res) => {
     if (!email?.trim()) {
       return res.status(400).json({ message: "L'email est obligatoire." });
     }
+
+    const emailCheck = validateRegistrationEmail(email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ message: emailCheck.message });
+    }
+
     if (!password) {
       return res.status(400).json({ message: "Le mot de passe est obligatoire." });
     }
@@ -68,10 +80,11 @@ module.exports.createUser = async (req, res) => {
       });
     }
 
-    const existing = await userModel.findOne({
-      email: email.trim().toLowerCase(),
-    });
+    const existing = await userModel.findOne({ email: emailCheck.email });
     if (existing) {
+      if (existing.isVerified === false) {
+        return handleExistingUnverifiedUser(existing, res);
+      }
       return res.status(400).json({ message: "Un compte existe déjà avec cet email." });
     }
 
@@ -80,19 +93,21 @@ module.exports.createUser = async (req, res) => {
 
     const newUser = new userModel({
       name: name.trim(),
-      email: email.trim().toLowerCase(),
+      email: emailCheck.email,
       password,
       role,
+      isVerified: false,
       dateNaissance: role === "transporteur" ? dateNaissance : null,
       permisPhoto,
     });
 
     await newUser.save();
 
-    res.status(201).json({
-      message: "Compte créé avec succès",
-      data: newUser,
-    });
+    if (role === "transporteur" && permisPhoto) {
+      verifyPermisInBackground(newUser._id, permisPhoto);
+    }
+
+    return sendVerificationAfterRegister(newUser, res, 201);
   } catch (error) {
     console.error("createUser error:", error);
     if (isDuplicateKeyError(error)) {
@@ -110,7 +125,7 @@ module.exports.createUser = async (req, res) => {
 module.exports.createUserAdmin = async (req, res) => {
   try {
     const { email, password ,tel} = req.body;
-    const newUser = new userModel({ email, password, tel ,role:"admin"});
+    const newUser = new userModel({ email, password, tel, role: "admin", isVerified: true });
     await newUser.save();
     res
       .status(201)
@@ -257,12 +272,29 @@ module.exports.deleteUser = async (req, res) => {
 module.exports.createUserWithImage = async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    const emailCheck = validateRegistrationEmail(email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ message: emailCheck.message });
+    }
+
+    const existing = await userModel.findOne({ email: emailCheck.email });
+    if (existing) {
+      if (existing.isVerified === false) {
+        return handleExistingUnverifiedUser(existing, res);
+      }
+      return res.status(400).json({ message: "Un compte existe déjà avec cet email." });
+    }
+
     const user_image = req.file.filename;
-    const newUser = new userModel({ email, password, user_image});
+    const newUser = new userModel({
+      email: emailCheck.email,
+      password,
+      user_image,
+      isVerified: false,
+    });
     await newUser.save();
-    res
-      .status(201)
-      .json({ message: "User created successfully", data: newUser });
+    return sendVerificationAfterRegister(newUser, res, 201);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

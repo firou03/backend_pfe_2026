@@ -4,6 +4,8 @@ const authController = require("../controllers/auth.controller");
 const upload = require("../middlewares/uploadfile");
 
 router.post("/register", upload.singleWithError("permis"), authController.register);
+router.get("/verify/:token", authController.verifyEmail);
+router.post("/resend-verification", authController.resendVerification);
 router.post("/login", authController.login);
 router.post("/forgot-password", authController.forgotPassword);
 router.put("/reset-password/:token", authController.resetPassword);

@@ -2,51 +2,26 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
-const path = require("path");
-const fs = require("fs");
-const FormData = require("form-data");
-const axios = require("axios");
 const User = require("../models/user.model");
+const { assignAndSendVerificationEmail } = require("../utils/emailVerification");
+const { validateRegistrationEmail, normalizeEmail } = require("../utils/emailValidation");
+const {
+  sanitizeUser,
+  sendVerificationAfterRegister,
+  handleExistingUnverifiedUser,
+} = require("../utils/registrationHelpers");
+const { verifyPermisInBackground } = require("../utils/permisVerification");
 const {
   clearExpiredBanIfNeeded,
   isUserBanned,
   banMessage,
 } = require("../utils/userBan");
 
-const PERMIS_VERIFIER_URL = process.env.PERMIS_VERIFIER_URL || "http://127.0.0.1:8000";
-
-async function verifyPermisInBackground(userId, imagePath) {
-  try {
-    const absolutePath = path.join(__dirname, "..", "public", "images", imagePath);
-    if (!fs.existsSync(absolutePath)) return;
-
-    const form = new FormData();
-    form.append("image", fs.createReadStream(absolutePath), {
-      filename: imagePath,
-      contentType: "image/jpeg",
-    });
-
-    const response = await axios.post(`${PERMIS_VERIFIER_URL}/verify`, form, {
-      headers: form.getHeaders(),
-      timeout: 60000,
-    });
-
-    const { score, verdict, reasons } = response.data;
-    await User.findByIdAndUpdate(userId, {
-      permisVerification: { score, verdict, reasons, verifiedAt: new Date() },
-    });
-    console.log(`[permis] user ${userId} → ${verdict} (${score}/100)`);
-  } catch (err) {
-    console.error(`[permis] verification failed for user ${userId}:`, err.message);
-  }
-}
-
 // REGISTER (Sign Up)
 exports.register = async (req, res) => {
   try {
-
     const { name, email, password, role, dateNaissance } = req.body;
- const permisPhoto = req.file ? req.file.filename : null;
+    const permisPhoto = req.file ? req.file.filename : null;
 
     if (!name?.trim()) {
       return res.status(400).json({ message: "Le nom est obligatoire." });
@@ -54,6 +29,12 @@ exports.register = async (req, res) => {
     if (!email?.trim()) {
       return res.status(400).json({ message: "L'email est obligatoire." });
     }
+
+    const emailCheck = validateRegistrationEmail(email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ message: emailCheck.message });
+    }
+
     if (!password) {
       return res.status(400).json({ message: "Le mot de passe est obligatoire." });
     }
@@ -63,32 +44,32 @@ exports.register = async (req, res) => {
       });
     }
 
-    const existUser = await User.findOne({ email: email.trim().toLowerCase() });
+    const normalizedEmail = emailCheck.email;
+    const existUser = await User.findOne({ email: normalizedEmail });
     if (existUser) {
+      if (existUser.isVerified === false) {
+        return handleExistingUnverifiedUser(existUser, res);
+      }
       return res.status(400).json({ message: "Un compte existe déjà avec cet email." });
     }
 
     const user = new User({
       name: name.trim(),
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       password,
       role,
-       dateNaissance: role === "transporteur" ? dateNaissance : null,
+      isVerified: false,
+      dateNaissance: role === "transporteur" ? dateNaissance : null,
       permisPhoto: role === "transporteur" ? permisPhoto : null,
     });
 
     await user.save();
 
-    // Fire-and-forget permis verification (does not block registration)
     if (role === "transporteur" && permisPhoto) {
       verifyPermisInBackground(user._id, permisPhoto);
     }
 
-    res.status(201).json({
-      message: "Compte créé avec succès",
-      user
-    });
-
+    return sendVerificationAfterRegister(user, res, 201);
   } catch (error) {
     console.error("Register error:", error);
     if (error.name === "ValidationError") {
@@ -99,7 +80,64 @@ exports.register = async (req, res) => {
   }
 };
 
+// VERIFY EMAIL
+exports.verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.params;
 
+    const user = await User.findOne({
+      verificationToken: token,
+      verificationTokenExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Lien invalide ou expiré." });
+    }
+
+    user.isVerified = true;
+    user.verificationToken = null;
+    user.verificationTokenExpires = null;
+    await user.save();
+
+    res.json({
+      message: "Email vérifié avec succès. Vous pouvez vous connecter.",
+    });
+  } catch (error) {
+    console.error("Verify email error:", error);
+    res.status(500).json({ message: "Erreur lors de la vérification." });
+  }
+};
+
+// RESEND VERIFICATION EMAIL
+exports.resendVerification = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email?.trim()) {
+      return res.status(400).json({ message: "L'email est obligatoire." });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(404).json({ message: "Aucun compte trouvé avec cet email." });
+    }
+
+    if (user.isVerified !== false) {
+      return res.status(400).json({ message: "Ce compte est déjà vérifié." });
+    }
+
+    await assignAndSendVerificationEmail(user);
+
+    res.json({
+      message: "Un nouvel email de vérification a été envoyé.",
+    });
+  } catch (error) {
+    console.error("Resend verification error:", error);
+    res.status(500).json({ message: "Erreur lors de l'envoi de l'email." });
+  }
+};
 
 // LOGIN
 exports.login = async (req, res) => {
@@ -112,17 +150,16 @@ exports.login = async (req, res) => {
       });
     }
 
-    // 🚀 Check for Static Admin Login
+    // Static Admin Login
     if (email === "admin@gmail.com" && password === "Admin123") {
       let admin = await User.findOne({ email: "admin@gmail.com", role: "admin" });
-      
-      // If admin doesn't exist in DB, create a temporary object or fetch it if it exists
+
       if (!admin) {
         admin = {
           _id: "static_admin_id",
           name: "Administrator",
           email: "admin@gmail.com",
-          role: "admin"
+          role: "admin",
         };
       }
 
@@ -135,7 +172,7 @@ exports.login = async (req, res) => {
       return res.json({
         message: "Login successful (Admin)",
         token,
-        user: admin
+        user: admin,
       });
     }
 
@@ -160,6 +197,13 @@ exports.login = async (req, res) => {
       return res.status(400).json({ message: "Mot de passe incorrect." });
     }
 
+    if (user.isVerified === false) {
+      return res.status(403).json({
+        message: "Veuillez vérifier votre email avant de vous connecter.",
+        needsVerification: true,
+      });
+    }
+
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
@@ -169,9 +213,8 @@ exports.login = async (req, res) => {
     res.json({
       message: "Login successful",
       token,
-      user
+      user: sanitizeUser(user),
     });
-
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Erreur serveur lors de la connexion." });
@@ -182,7 +225,7 @@ exports.login = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    
+
     if (!email) {
       return res.status(400).json({ message: "Email est requis" });
     }
@@ -195,7 +238,7 @@ exports.forgotPassword = async (req, res) => {
 
     const resetToken = crypto.randomBytes(32).toString("hex");
     user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    user.resetPasswordExpires = Date.now() + 3600000;
 
     await user.save();
 
@@ -203,11 +246,11 @@ exports.forgotPassword = async (req, res) => {
       service: "gmail",
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS?.replace(/\s/g, ''), // Remove spaces from app password
+        pass: process.env.EMAIL_PASS?.replace(/\s/g, ""),
       },
     });
 
-    const resetUrl = `http://localhost:3000/auth/reset-password/${resetToken}`;
+    const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/auth/reset-password/${resetToken}`;
 
     const mailOptions = {
       from: process.env.EMAIL_USER,
@@ -232,13 +275,11 @@ exports.forgotPassword = async (req, res) => {
       res.json({ message: "Un lien de réinitialisation a été envoyé à votre email" });
     } catch (emailError) {
       console.error("Erreur d'envoi d'email:", emailError);
-      // Clear the reset token if email fails
       user.resetPasswordToken = null;
       user.resetPasswordExpires = null;
       await user.save();
       res.status(500).json({ message: "Erreur lors de l'envoi de l'email. Veuillez réessayer." });
     }
-
   } catch (error) {
     console.error("Forgot password error:", error);
     res.status(500).json({ message: "Erreur lors du traitement de la demande" });
@@ -264,14 +305,12 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: "Le jeton est invalide ou a expiré" });
     }
 
-    // Set password - the pre-save middleware will hash it
     user.password = password;
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
 
     await user.save();
     res.json({ message: "Mot de passe réinitialisé avec succès !" });
-
   } catch (error) {
     console.error("Reset password error:", error);
     res.status(500).json({ message: "Erreur lors de la réinitialisation du mot de passe" });

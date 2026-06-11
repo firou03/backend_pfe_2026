@@ -78,6 +78,14 @@ const userSchema = new mongoose.Schema(
     postalCode: String,
     preference: String,
 
+    // Email verification
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verificationToken: String,
+    verificationTokenExpires: Date,
+
     // Password reset fields
     resetPasswordToken: String,
     resetPasswordExpires: Date,

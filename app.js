@@ -89,6 +89,9 @@ app.use(function (err, req, res, next) {
 
 //2
 const server = http.createServer(app);
+const { initSocket } = require("./socket");
+initSocket(server);
+
 const port = process.env.PORT || 5000;
 server.listen(port, "0.0.0.0", () => {
   connectToMongoDB();

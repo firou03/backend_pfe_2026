@@ -9,7 +9,7 @@ const {
   TRANSPORTER_VISIBLE_STATUSES,
   TRANSPORT_REQUEST_STATUS,
 } = require("../constants/transportRequestStatus");
-const { calculatePrice } = require("../services/payment.service");
+const { calculatePrice, enrichWithPrice } = require("../services/payment.service");
 const {
   startOfToday,
   isPastRequestDate,
@@ -69,7 +69,7 @@ exports.getAllRequests = async (req, res) => {
       .populate("client", "name email user_image phone location address city role averageRating totalReviews")
       .populate("transporteur", "name email user_image phone location address city role averageRating totalReviews");
 
-    res.json(requests);
+    res.json(requests.map(enrichWithPrice));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -341,6 +341,25 @@ exports.deliverRequest = async (req, res) => {
         { role: "admin" },
         { $inc: { totalRevenue: amount } }
       );
+    }
+
+    // ── 5. Notify admins ────────────────────────────────────────────────
+    try {
+      const admins = await User.find({ role: "admin" });
+      const amountLabel = amount > 0 ? ` Montant: ${amount} DT.` : "";
+      await Promise.all(
+        admins.map((admin) =>
+          Notification.create({
+            userId: admin._id,
+            type: "request_delivered",
+            title: "Demande livrée",
+            message: `Livraison confirmée: ${request.pickupLocation} → ${request.deliveryLocation}, ${request.weight || 0}kg.${amountLabel}`,
+            requestId: request._id,
+          })
+        )
+      );
+    } catch (notifError) {
+      console.error("⚠️ Error creating admin delivery notifications:", notifError);
     }
 
     res.json({
